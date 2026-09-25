@@ -11,7 +11,7 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const rooms = {}; // roomId -> Game
+const rooms = {};
 
 function makeId(n = 5) {
   return Math.random().toString(36).slice(2, 2 + n).toUpperCase();
@@ -24,18 +24,21 @@ function broadcast(room) {
 }
 
 function tick(room) {
+  // 🎲 Yönetici koz seçimi (oyun dışı, rastgele)
   if (room.phase === 'trump') {
-    const chooser = room.players[room.trumpChooserIndex];
-    if (chooser.isBot) {
-      setTimeout(() => {
-        const suit = bot.chooseTrump(chooser.hand);
-        room.setTrump(room.trumpChooserIndex, suit);
-        broadcast(room);
-        tick(room);
-      }, 700);
-    }
+    setTimeout(() => {
+      room.adminChooseTrump();
+      // Yönetici seçimini herkese duyur (opsiyonel mesaj)
+      io.to(room.roomId).emit('adminMessage', {
+        text: `Yönetici kozu seçti: ${room.trump}`,
+        trump: room.trump
+      });
+      broadcast(room);
+      tick(room);
+    }, 1200); // 1.2 sn bekleyip seçsin, "düşünüyor" hissi
     return;
   }
+
   if (room.phase === 'bidding') {
     const cur = room.players[room.currentBidderIndex];
     if (cur.isBot) {
@@ -48,6 +51,7 @@ function tick(room) {
     }
     return;
   }
+
   if (room.phase === 'playing') {
     const cur = room.players[room.turnIndex];
     if (cur.isBot) {
@@ -60,6 +64,7 @@ function tick(room) {
     }
     return;
   }
+
   if (room.phase === 'scoring') {
     setTimeout(() => {
       room.nextRound();
@@ -95,7 +100,7 @@ io.on('connection', (socket) => {
     if (!g) return;
     if (g.players.length >= 4) return;
     const botId = 'bot_' + makeId(4);
-    g.addPlayer(botId, 'Bot ' + (g.players.length), true);
+    g.addPlayer(botId, 'Bot ' + g.players.length, true);
     broadcast(g);
   });
 
@@ -108,12 +113,7 @@ io.on('connection', (socket) => {
     tick(g);
   });
 
-  socket.on('chooseTrump', ({ roomId, suit }) => {
-    const g = rooms[roomId];
-    if (!g) return;
-    const idx = g.players.findIndex(p => p.id === socket.id);
-    if (g.setTrump(idx, suit)) { broadcast(g); tick(g); }
-  });
+  // ❌ chooseTrump olayı kaldırıldı — kozu artık yönetici seçiyor.
 
   socket.on('placeBid', ({ roomId, bid }) => {
     const g = rooms[roomId];
@@ -130,7 +130,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // basitçe odadan düşür
     for (const id in rooms) {
       const g = rooms[id];
       const i = g.players.findIndex(p => p.id === socket.id);
