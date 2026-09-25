@@ -1,24 +1,4 @@
-const { SUITS, RV } = require('./game');
-
-function evaluateSuit(hand, suit) {
-  let s = 0;
-  for (const c of hand) {
-    if (c.suit === suit) s += RV[c.rank] * 1.2;
-    if (c.rank === 'A') s += 3;
-    if (c.rank === 'K') s += 2;
-    if (c.rank === 'Q') s += 1;
-  }
-  return s;
-}
-
-function chooseTrump(hand) {
-  let best = { suit: 'S', score: -Infinity };
-  for (const s of SUITS) {
-    const sc = evaluateSuit(hand, s);
-    if (sc > best.score) best = { suit: s, score: sc };
-  }
-  return best.suit;
-}
+const { RV } = require('./game');
 
 function chooseBid(hand, trump, currentHigh) {
   let pts = 0;
@@ -50,13 +30,10 @@ function beatsStatic(a, b, led, trump) {
   return RV[a.rank] > RV[b.rank];
 }
 
-// hand: bot eli, trick: [{playerIndex,card}], trump, botIndex
 function chooseCard(hand, trick, trump, botIndex, players) {
   const led = trick.length ? trick[0].card.suit : null;
 
-  // Lider
   if (!led) {
-    // Ası olan renkten oyna, yoksa en düşük at
     const aces = hand.filter(c => c.rank === 'A');
     if (aces.length) return aces[0];
     return [...hand].sort((a, b) => RV[a.rank] - RV[b.rank])[0];
@@ -65,7 +42,6 @@ function chooseCard(hand, trick, trump, botIndex, players) {
   const follow = hand.filter(c => c.suit === led);
   const trumps = hand.filter(c => c.suit === trump);
 
-  // Şu an kazanan
   let win = trick[0];
   for (const p of trick.slice(1)) {
     if (beatsStatic(p.card, win.card, led, trump)) win = p;
@@ -76,13 +52,11 @@ function chooseCard(hand, trick, trump, botIndex, players) {
 
   if (follow.length > 0) {
     const sorted = [...follow].sort((a, b) => RV[a.rank] - RV[b.rank]);
-    if (winnerTeam === myTeam && isLast) return sorted[0]; // partner kazanıyor → düşük at
-    // kazanmaya çalış
+    if (winnerTeam === myTeam && isLast) return sorted[0];
     const winningPlay = follow.find(c => beatsStatic(c, win.card, led, trump));
     return winningPlay || sorted[0];
   }
 
-  // Renk yok
   if (trumps.length) {
     const sortedT = [...trumps].sort((a, b) => RV[a.rank] - RV[b.rank]);
     if (winnerTeam !== myTeam) {
@@ -95,4 +69,4 @@ function chooseCard(hand, trick, trump, botIndex, players) {
   return [...hand].sort((a, b) => RV[a.rank] - RV[b.rank])[0];
 }
 
-module.exports = { chooseTrump, chooseBid, chooseCard };
+module.exports = { chooseBid, chooseCard };
