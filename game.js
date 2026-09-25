@@ -1,4 +1,4 @@
-const SUITS = ['S', 'H', 'D', 'C']; // Maça, Kupa, Karo, Sinek
+const SUITS = ['S', 'H', 'D', 'C'];
 const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 const RV = Object.fromEntries(RANKS.map((r, i) => [r, i + 2]));
 
@@ -22,18 +22,19 @@ class Game {
     this.dealerIndex = 0;
     this.trump = null;
     this.phase = 'waiting';     // waiting | trump | bidding | playing | scoring | over
-    this.bids = [];             // {playerIndex, bid | 'pass'}
+    this.bids = [];
     this.highestBid = null;
     this.highestBidder = null;
     this.currentBidderIndex = 0;
     this.turnIndex = 0;
-    this.trumpChooserIndex = 0;
-    this.currentTrick = [];     // {playerIndex, card}
+    this.currentTrick = [];
     this.lastTrick = null;
     this.lastTrickWinner = null;
     this.tricksWon = [0, 0];
     this.scores = [0, 0];
     this.targetScore = 31;
+    // Yönetici koz seçimi animasyonu için küçük bir gecikme
+    this.adminChoseAt = null;
   }
 
   addPlayer(id, name, isBot = false) {
@@ -44,7 +45,7 @@ class Game {
 
   start() {
     if (this.players.length !== 4) return false;
-    this.players.forEach((p, i) => (p.team = i % 2)); // 0&2 vs 1&3
+    this.players.forEach((p, i) => (p.team = i % 2));
     this._newRound();
     return true;
   }
@@ -64,16 +65,20 @@ class Game {
     this.lastTrick = null;
     this.lastTrickWinner = null;
     this.tricksWon = [0, 0];
-    this.trumpChooserIndex = (this.dealerIndex + 1) % 4;
+
+    // Faz: önce yönetici koz seçecek
     this.phase = 'trump';
+    this.adminChoseAt = null;
   }
 
-  setTrump(playerIndex, suit) {
+  // 🎲 Yönetici (oyun dışı) rastgele koz seçer
+  adminChooseTrump() {
     if (this.phase !== 'trump') return false;
-    if (playerIndex !== this.trumpChooserIndex) return false;
-    if (!SUITS.includes(suit)) return false;
+    const suit = SUITS[Math.floor(Math.random() * SUITS.length)];
     this.trump = suit;
+    this.adminChoseAt = Date.now();
     this.phase = 'bidding';
+    // Teklif turunu dağıtıcının solundan başlat
     this.currentBidderIndex = (this.dealerIndex + 1) % 4;
     return true;
   }
@@ -90,11 +95,10 @@ class Game {
     }
     this.bids.push({ playerIndex, bid });
 
-    // Bitiş koşulları
     const allBid = this.bids.length === 4;
     if (bid === 13 || allBid) {
       if (this.highestBidder === null) {
-        // Kimse teklif vermedi → yeniden dağıt
+        // Kimse teklif vermedi → yeniden dağıt (yönetici tekrar koz seçer)
         this.dealerIndex = (this.dealerIndex + 1) % 4;
         this._newRound();
         return true;
@@ -108,8 +112,7 @@ class Game {
 
   _startPlaying() {
     this.phase = 'playing';
-    this.turnIndex = (this.dealerIndex + 1) % 4; // en yüksek teklif veren değil, dağıtıcının solundaki başlar
-    // İstersen: this.turnIndex = this.highestBidder;
+    this.turnIndex = (this.dealerIndex + 1) % 4;
     this.currentTrick = [];
     this.tricksWon = [0, 0];
   }
@@ -121,7 +124,6 @@ class Game {
     const idx = p.hand.findIndex(c => c.id === cardId);
     if (idx === -1) return false;
 
-    // Takip kuralı
     if (this.currentTrick.length > 0) {
       const led = this.currentTrick[0].card.suit;
       const card = p.hand[idx];
@@ -187,7 +189,6 @@ class Game {
     this._newRound();
   }
 
-  // Her istemciye özel state (kendi elini görür)
   stateFor(playerId) {
     const me = this.players.find(p => p.id === playerId);
     return {
@@ -195,7 +196,6 @@ class Game {
       phase: this.phase,
       trump: this.trump,
       dealerIndex: this.dealerIndex,
-      trumpChooserIndex: this.trumpChooserIndex,
       currentBidderIndex: this.currentBidderIndex,
       turnIndex: this.turnIndex,
       highestBid: this.highestBid,
