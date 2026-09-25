@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>Tarneeb</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#0f3d2e; color:#fff; margin:0; padding:16px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  .card { background:#fff; color:#000; border-radius:6px; padding:6px 10px; margin:3px;
+          display:inline-block; cursor:pointer; font-weight:600; box-shadow:0 1px 3px #0006; }
+  .card.red { color:#c00; }
+  .card:hover { transform: translateY(-3px); }
+  .panel { background:#0003; padding:12px; border-radius:8px; margin:8px 0; }
+  button { padding:6px 10px; margin:3px; border-radius:6px; border:0; cursor:pointer; }
+  input { padding:6px; border-radius:6px; border:0; }
+  pre { background:#0004; padding:8px; border-radius:6px; overflow:auto; }
+  .trick { min-height:60px; }
+</style>
+</head>
+<body>
+<h1>🃏 Tarneeb</h1>
+
+<div id="lobby" class="panel">
+  <input id="name" placeholder="Adın" />
+  <button onclick="createRoom()">Oda Kur</button>
+  <input id="roomId" placeholder="Oda Kodu" />
+  <button onclick="joinRoom()">Katıl</button>
+</div>
+
+<div id="game" style="display:none">
+  <div class="panel">
+    <b>Oda:</b> <span id="rid"></span> |
+    <b>Faz:</b> <span id="phase"></span> |
+    <b>Koz:</b> <span id="trump"></span> |
+    <b>Skor:</b> <span id="scores"></span>
+  </div>
+
+  <div class="panel">
+    <button onclick="addBot()">Bot Ekle</button>
+    <button onclick="startGame()">Başlat</button>
+  </div>
+
+  <div class="panel">
+    <div><b>Masa</b></div>
+    <div id="players"></div>
+    <div class="trick" id="trick"></div>
+  </div>
+
+  <div class="panel">
+    <div><b>Elin</b></div>
+    <div id="hand"></div>
+  </div>
+
+  <div class="panel" id="actions"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let state = null, myRoom = null, myId = null;
+
+function createRoom() {
+  socket.emit('createRoom', { name: document.getElementById('name').value });
+}
+function joinRoom() {
+  socket.emit('joinRoom', { roomId: document.getElementById('roomId').value, name: document.getElementById('name').value });
+}
+function addBot() { socket.emit('addBot', { roomId: myRoom }); }
+function startGame() { socket.emit('startGame', { roomId: myRoom }); }
+function chooseTrump(s) { socket.emit('chooseTrump', { roomId: myRoom, suit: s }); }
+function bid(b) { socket.emit('placeBid', { roomId: myRoom, bid: b }); }
+function play(id) { socket.emit('playCard', { roomId: myRoom, cardId: id }); }
+
+socket.on('joined', ({ roomId, you }) => {
+  myRoom = roomId; myId = you;
+  document.getElementById('rid').textContent = roomId;
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+});
+socket.on('error', (m) => alert(m));
+socket.on('state', (s) => { state = s; render(); });
+
+const SUIT_TR = { S:'Maça♠', H:'Kupa♥', D:'Karo♦', C:'Sinek♣' };
+const RED = new Set(['H','D']);
+
+function cardEl(c, onClick) {
+  const el = document.createElement('div');
+  el.className = 'card' + (RED.has(c.suit) ? ' red' : '');
+  el.textContent = c.rank + c.suit;
+  if (onClick) el.onclick = () => onClick(c.id);
+  return el;
+}
+
+function render() {
+  const s = state;
+  document.getElementById('phase').textContent = s.phase;
+  document.getElementById('trump').textContent = s.trump ? SUIT_TR[s.trump] : '-';
+  document.getElementById('scores').textContent = `${s.scores[0]} - ${s.scores[1]}`;
+
+  // oyuncular
+  const ps = document.getElementById('players');
+  ps.innerHTML = '';
+  s.players.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.textContent = `${i===s.turnIndex?'▶ ':''}${p.name}${p.isBot?' 🤖':''} (Takım ${p.team}) - ${p.cardCount} kart${i===s.dealerIndex?' 🎩':''}${i===s.trumpChooserIndex&&s.phase==='trump'?' (koz seçiyor)':''}`;
+    ps.appendChild(d);
+  });
+
+  // masa
+  const t = document.getElementById('trick');
+  t.innerHTML = '';
+  s.currentTrick.forEach(pl => t.appendChild(cardEl(pl.card)));
+
+  // elim
+  const h = document.getElementById('hand');
+  h.innerHTML = '';
+  const myTurn = s.phase === 'playing' && s.turnIndex === s.myIndex;
+  s.myHand.forEach(c => h.appendChild(cardEl(c, myTurn ? play : null)));
+
+  // aksiyonlar
+  const a = document.getElementById('actions');
+  a.innerHTML = '';
+
+  if (s.phase === 'trump' && s.myIndex === s.trumpChooserIndex) {
+    a.innerHTML = '<b>Koz seç:</b> ';
+    ['S','H','D','C'].forEach(su => {
+      const b = document.createElement('button');
+      b.textContent = SUIT_TR[su];
+      b.onclick = () => chooseTrump(su);
+      a.appendChild(b);
+    });
+  }
+
+  if (s.phase === 'bidding' && s.myIndex === s.currentBidderIndex) {
+    a.innerHTML = '<b>Teklif ver:</b> ';
+    for (let i = 2; i <= 13; i++) {
+      if (s.highestBid !== null && i <= s.highestBid) continue;
+      const b = document.createElement('button');
+      b.textContent = i;
+      b.onclick = () => bid(i);
+      a.appendChild(b);
+    }
+    const p = document.createElement('button');
+    p.textContent = 'Pas';
+    p.onclick = () => bid('pass');
+    a.appendChild(p);
+  }
+}
+</script>
+</body>
+</html>
