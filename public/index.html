@@ -5,7 +5,6 @@
 <title>Tarneeb</title>
 <style>
   body { font-family: system-ui, sans-serif; background:#0f3d2e; color:#fff; margin:0; padding:16px; }
-  .row { display:flex; gap:16px; flex-wrap:wrap; }
   .card { background:#fff; color:#000; border-radius:6px; padding:6px 10px; margin:3px;
           display:inline-block; cursor:pointer; font-weight:600; box-shadow:0 1px 3px #0006; }
   .card.red { color:#c00; }
@@ -13,8 +12,9 @@
   .panel { background:#0003; padding:12px; border-radius:8px; margin:8px 0; }
   button { padding:6px 10px; margin:3px; border-radius:6px; border:0; cursor:pointer; }
   input { padding:6px; border-radius:6px; border:0; }
-  pre { background:#0004; padding:8px; border-radius:6px; overflow:auto; }
   .trick { min-height:60px; }
+  #adminMsg { background:#ffd54f; color:#000; padding:8px; border-radius:6px; font-weight:600;
+              display:none; margin:8px 0; }
 </style>
 </head>
 <body>
@@ -28,6 +28,8 @@
 </div>
 
 <div id="game" style="display:none">
+  <div id="adminMsg"></div>
+
   <div class="panel">
     <b>Oda:</b> <span id="rid"></span> |
     <b>Faz:</b> <span id="phase"></span> |
@@ -67,7 +69,6 @@ function joinRoom() {
 }
 function addBot() { socket.emit('addBot', { roomId: myRoom }); }
 function startGame() { socket.emit('startGame', { roomId: myRoom }); }
-function chooseTrump(s) { socket.emit('chooseTrump', { roomId: myRoom, suit: s }); }
 function bid(b) { socket.emit('placeBid', { roomId: myRoom, bid: b }); }
 function play(id) { socket.emit('playCard', { roomId: myRoom, cardId: id }); }
 
@@ -79,6 +80,14 @@ socket.on('joined', ({ roomId, you }) => {
 });
 socket.on('error', (m) => alert(m));
 socket.on('state', (s) => { state = s; render(); });
+
+// 🎲 Yönetici mesajı
+socket.on('adminMessage', ({ text }) => {
+  const el = document.getElementById('adminMsg');
+  el.textContent = '👑 ' + text;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 2500);
+});
 
 const SUIT_TR = { S:'Maça♠', H:'Kupa♥', D:'Karo♦', C:'Sinek♣' };
 const RED = new Set(['H','D']);
@@ -97,38 +106,29 @@ function render() {
   document.getElementById('trump').textContent = s.trump ? SUIT_TR[s.trump] : '-';
   document.getElementById('scores').textContent = `${s.scores[0]} - ${s.scores[1]}`;
 
-  // oyuncular
   const ps = document.getElementById('players');
   ps.innerHTML = '';
   s.players.forEach((p, i) => {
     const d = document.createElement('div');
-    d.textContent = `${i===s.turnIndex?'▶ ':''}${p.name}${p.isBot?' 🤖':''} (Takım ${p.team}) - ${p.cardCount} kart${i===s.dealerIndex?' 🎩':''}${i===s.trumpChooserIndex&&s.phase==='trump'?' (koz seçiyor)':''}`;
+    d.textContent = `${i===s.turnIndex?'▶ ':''}${p.name}${p.isBot?' 🤖':''} (Takım ${p.team}) - ${p.cardCount} kart${i===s.dealerIndex?' 🎩':''}`;
     ps.appendChild(d);
   });
 
-  // masa
   const t = document.getElementById('trick');
   t.innerHTML = '';
   s.currentTrick.forEach(pl => t.appendChild(cardEl(pl.card)));
 
-  // elim
   const h = document.getElementById('hand');
   h.innerHTML = '';
   const myTurn = s.phase === 'playing' && s.turnIndex === s.myIndex;
   s.myHand.forEach(c => h.appendChild(cardEl(c, myTurn ? play : null)));
 
-  // aksiyonlar
   const a = document.getElementById('actions');
   a.innerHTML = '';
 
-  if (s.phase === 'trump' && s.myIndex === s.trumpChooserIndex) {
-    a.innerHTML = '<b>Koz seç:</b> ';
-    ['S','H','D','C'].forEach(su => {
-      const b = document.createElement('button');
-      b.textContent = SUIT_TR[su];
-      b.onclick = () => chooseTrump(su);
-      a.appendChild(b);
-    });
+  // ❌ Koz seçimi butonları kaldırıldı — artık yönetici seçiyor.
+  if (s.phase === 'trump') {
+    a.innerHTML = '👑 Yönetici kozu seçiyor...';
   }
 
   if (s.phase === 'bidding' && s.myIndex === s.currentBidderIndex) {
